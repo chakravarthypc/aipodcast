@@ -1,0 +1,82 @@
+!pip install -qU cohere gradio
+!apt-get install -y espeak-ng
+
+!pip install gtts
+
+!pip install cohere gtts
+
+import gradio as gr
+import cohere
+from gtts import gTTS
+import os
+import uuid
+import re
+
+# 1. Initialize Cohere API
+co = cohere.Client("GARNtcnzo4a0k1xazRIZf1SBUUqbFrSn9uIX7B39")  # 🔑 Replace with your real key
+
+# 2. Generate podcast script
+def generate_script(topic):
+    prompt = f"Write a 400-word podcast script on the topic: '{topic}'."
+    # Using Cohere's chat endpoint
+    response = co.chat(
+        model="command-a-translate-08-2025",
+        message=prompt,
+        max_tokens=800,
+        temperature=0.7
+    )
+
+    # Handle possible response formats
+    if hasattr(response, "text") and response.text:
+        script = response.text.strip()
+    elif hasattr(response, "output_text"):
+        script = response.output_text.strip()
+    else:
+        raise RuntimeError("⚠️ Cohere response format not recognized.")
+
+    # Clean the script
+    return clean_script(script)
+
+# 3. Function to clean the script
+def clean_script(script):
+    # Remove stage directions and unwanted lines
+    script = re.sub(r"\*\*?\[.*?\]\*\*?", "", script)              # Removes [Intro Music Fades In], [Music Transition], etc.
+    script = re.sub(r"\bHost:?\b", "", script, flags=re.IGNORECASE) # Removes 'Host:' or 'host:'
+    script = re.sub(r"I[’']m your host.*?,", "", script, flags=re.IGNORECASE)  # Removes lines like "I’m your host, [Your Name],"
+    script = re.sub(r"\[Your Name\]", "", script, flags=re.IGNORECASE)         # Removes placeholder names
+    script = re.sub(r"\s{2,}", " ", script)                        # Remove extra spaces
+    script = re.sub(r"\n{2,}", "\n", script)                       # Remove extra newlines
+    return script.strip()
+
+# 4. Convert cleaned script to speech with gTTS
+def generate_audio(script):
+    filename = f"podcast_{uuid.uuid4().hex}.mp3"
+    tts = gTTS(text=script, lang="en")
+    tts.save(filename)
+    return filename
+
+# 5. Full workflow
+def generate_podcast(topic):
+    print(f"🎙️ Generating podcast on: {topic}")
+
+    script = generate_script(topic)
+    print("\n📜 Cleaned Script Generated:\n")
+    print(script)
+
+    print("\n🔊 Generating audio...")
+    audio_file = generate_audio(script)
+    print(f"✅ Podcast saved as: {audio_file}")
+
+    return script, audio_file
+
+
+# Gradio Interface
+iface = gr.Interface(
+    fn=generate_podcast,
+    inputs="text",
+    outputs=["text", "audio"],
+    title="Podcast Generator",
+    description="Enter a topic and generate a podcast script and audio."
+)
+
+iface.launch(debug=True)
